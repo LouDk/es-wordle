@@ -326,13 +326,13 @@ const HTML_PAGE = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Wordle</title>
+<title>Bunny Wordle</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: 'Helvetica Neue', Arial, sans-serif;
-    background: #121213;
-    color: #fff;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    background: linear-gradient(180deg, #03192e 0%, #0a2a4a 50%, #183d6d 100%);
+    color: #ebf7ff;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -343,16 +343,29 @@ const HTML_PAGE = `<!DOCTYPE html>
     width: 100%;
     max-width: 500px;
     text-align: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #3a3a3c;
+    padding: 16px 0 12px;
+    border-bottom: 2px solid rgba(253, 141, 50, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
   }
-  header h1 { font-size: 2rem; font-weight: 700; letter-spacing: 0.15em; }
+  header svg { width: 32px; height: 32px; flex-shrink: 0; }
+  header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    background: linear-gradient(135deg, #fd8d32 0%, #ffb347 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
   #message {
     height: 32px;
     line-height: 32px;
     font-size: 0.9rem;
     font-weight: 600;
-    color: #fff;
+    color: #fd8d32;
     text-align: center;
   }
   #board {
@@ -368,22 +381,40 @@ const HTML_PAGE = `<!DOCTYPE html>
   }
   .tile {
     width: 62px; height: 62px;
-    border: 2px solid #3a3a3c;
+    border: 2px solid rgba(235, 247, 255, 0.15);
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 2rem;
     font-weight: 700;
     text-transform: uppercase;
+    color: #ebf7ff;
     transition: transform 0.1s;
+    background: rgba(255, 255, 255, 0.04);
   }
-  .tile.filled { border-color: #565758; animation: pop 0.1s; }
+  .tile.filled {
+    border-color: rgba(253, 141, 50, 0.5);
+    animation: pop 0.1s;
+  }
   .tile.reveal {
     animation: flip 0.35s ease forwards;
   }
-  .tile.correct { background: #538d4e; border-color: #538d4e; }
-  .tile.present { background: #b59f3b; border-color: #b59f3b; }
-  .tile.absent  { background: #3a3a3c; border-color: #3a3a3c; }
+  .tile.correct {
+    background: #fd8d32;
+    border-color: #fd8d32;
+    color: #fff;
+  }
+  .tile.present {
+    background: #4a74a2;
+    border-color: #4a74a2;
+    color: #fff;
+  }
+  .tile.absent {
+    background: rgba(235, 247, 255, 0.08);
+    border-color: rgba(235, 247, 255, 0.08);
+    color: rgba(235, 247, 255, 0.4);
+  }
 
   @keyframes pop {
     0% { transform: scale(1); }
@@ -416,9 +447,9 @@ const HTML_PAGE = `<!DOCTYPE html>
     min-width: 36px;
     padding: 0 8px;
     border: none;
-    border-radius: 4px;
-    background: #818384;
-    color: #fff;
+    border-radius: 8px;
+    background: rgba(235, 247, 255, 0.12);
+    color: #ebf7ff;
     font-size: 0.85rem;
     font-weight: 700;
     cursor: pointer;
@@ -428,25 +459,27 @@ const HTML_PAGE = `<!DOCTYPE html>
     text-transform: uppercase;
     transition: background 0.2s;
   }
+  .key:hover { background: rgba(235, 247, 255, 0.2); }
   .key.wide { min-width: 65px; font-size: 0.75rem; }
-  .key.correct { background: #538d4e; }
-  .key.present { background: #b59f3b; }
-  .key.absent  { background: #3a3a3c; }
+  .key.correct { background: #fd8d32; color: #fff; }
+  .key.present { background: #4a74a2; color: #fff; }
+  .key.absent  { background: rgba(235, 247, 255, 0.05); color: rgba(235, 247, 255, 0.3); }
 
   #new-game {
     display: none;
     margin-top: 12px;
     padding: 12px 32px;
     border: none;
-    border-radius: 4px;
-    background: #538d4e;
-    color: #fff;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #fd8d32 0%, #ffb347 100%);
+    color: #03192e;
     font-size: 1rem;
     font-weight: 700;
     cursor: pointer;
     letter-spacing: 0.05em;
+    transition: opacity 0.2s;
   }
-  #new-game:hover { background: #6aaf5e; }
+  #new-game:hover { opacity: 0.85; }
 
   @media (max-width: 400px) {
     .tile { width: 52px; height: 52px; font-size: 1.6rem; }
@@ -456,7 +489,17 @@ const HTML_PAGE = `<!DOCTYPE html>
 </style>
 </head>
 <body>
-<header><h1>WORDLE</h1></header>
+<header>
+  <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <ellipse cx="16" cy="20" rx="11" ry="10" fill="#fd8d32"/>
+    <ellipse cx="16" cy="20" rx="8" ry="7" fill="#ffb347"/>
+    <ellipse cx="13" cy="19" rx="2" ry="2.5" fill="#03192e"/>
+    <ellipse cx="19" cy="19" rx="2" ry="2.5" fill="#03192e"/>
+    <ellipse cx="16" cy="22" rx="1.5" ry="1" fill="#e87a20"/>
+    <path d="M10 10 Q10 2 14 6 Q12 2 16 4 Q20 2 18 6 Q22 2 22 10" stroke="#fd8d32" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  </svg>
+  <h1>BUNNY WORDLE</h1>
+</header>
 <div id="message"></div>
 <div id="board"></div>
 <div id="keyboard"></div>
