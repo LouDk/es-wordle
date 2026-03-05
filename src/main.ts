@@ -274,6 +274,21 @@ const HTML_PAGE = `<!DOCTYPE html>
   .key.present { background: #b59f3b; }
   .key.absent  { background: #3a3a3c; }
 
+  #new-game {
+    display: none;
+    margin-top: 12px;
+    padding: 12px 32px;
+    border: none;
+    border-radius: 4px;
+    background: #538d4e;
+    color: #fff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+  }
+  #new-game:hover { background: #6aaf5e; }
+
   @media (max-width: 400px) {
     .tile { width: 52px; height: 52px; font-size: 1.6rem; }
     .key  { height: 50px; min-width: 28px; font-size: 0.75rem; }
@@ -286,6 +301,7 @@ const HTML_PAGE = `<!DOCTYPE html>
 <div id="message"></div>
 <div id="board"></div>
 <div id="keyboard"></div>
+<button id="new-game">New Game</button>
 
 <script>
 const MAX_GUESSES = 6;
@@ -300,6 +316,7 @@ let isRevealing = false;
 const board = document.getElementById("board");
 const messageEl = document.getElementById("message");
 const keyboardEl = document.getElementById("keyboard");
+const newGameBtn = document.getElementById("new-game");
 
 // Build board
 for (let r = 0; r < MAX_GUESSES; r++) {
@@ -432,9 +449,11 @@ async function submitGuess() {
       const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
       showMessage(msgs[currentRow] || "Nice!", 0);
       gameOver = true;
+      newGameBtn.style.display = "block";
     } else if (data.status === "lost") {
       showMessage(data.answer, 0);
       gameOver = true;
+      newGameBtn.style.display = "block";
     }
 
     currentRow++;
@@ -489,15 +508,44 @@ async function restoreGame(id) {
       const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
       showMessage(msgs[currentRow - 1] || "Nice!", 0);
       gameOver = true;
+      newGameBtn.style.display = "block";
     } else if (data.status === "lost") {
       showMessage(data.answer, 0);
       gameOver = true;
+      newGameBtn.style.display = "block";
     }
     return true;
   } catch {
     return false;
   }
 }
+
+function resetBoard() {
+  for (let r = 0; r < MAX_GUESSES; r++) {
+    for (let c = 0; c < WORD_LENGTH; c++) {
+      const tile = getTile(r, c);
+      tile.textContent = "";
+      tile.className = "tile";
+    }
+  }
+  document.querySelectorAll(".key").forEach(k => {
+    if (!k.classList.contains("wide")) k.className = "key";
+    else k.className = "key wide";
+  });
+  Object.keys(keyStatus).forEach(k => delete keyStatus[k]);
+  currentRow = 0;
+  currentCol = 0;
+  currentGuess = "";
+  gameOver = false;
+  isRevealing = false;
+  messageEl.textContent = "";
+  newGameBtn.style.display = "none";
+}
+
+newGameBtn.addEventListener("click", async () => {
+  resetBoard();
+  await newGame();
+});
 
 async function startGame() {
   const saved = localStorage.getItem("wordle_gameId");
