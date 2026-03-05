@@ -1,59 +1,44 @@
-# Template: es-empty-script
+# Wordle - Bunny Edge Scripting
 
-This templates demonstrates a basic script built for Bunny using a local `Deno`.
+A simple Wordle clone running on [Bunny Edge Scripting](https://bunny.net).
 
-> You do not want to use Deno? Feel free to use something else, [here](https://bunny.net) is a full
-> fledged example with `node` instead!
+## How it works
 
-This templated script is currently deployed
-[here](https://es-simple-script-8rxx0.b-cdn.net/).
+The entire game is served from a single edge function (`src/main.ts`):
+
+- **GET /** serves the HTML/CSS/JS game UI
+- **POST /api/new** picks a random 5-letter word and returns an encoded token
+- **POST /api/guess** validates a guess against the token and returns per-letter feedback
+
+The server is fully stateless. The word is encoded in a client-held token and all game history is stored in `localStorage`, so sessions survive server restarts and page refreshes.
 
 ## Setup
 
-To run this example you'll need to have a valid
-[Deno](https://docs.deno.com/runtime/manual/getting_started/installation/) installation.
+Requires [Deno](https://docs.deno.com/runtime/manual/getting_started/installation/).
 
-When you have the `deno` binary available, you should be able to run the `check`
-task which is the task ensuring everything is compiling fine.
+```sh
+# Run locally
+deno task dev
 
-```
-# A tiny lint just to be sure!
+# Lint & type check
 deno task lint
-
-# We ensure everything is type compliant!
 deno task check
+
+# Build for deployment
+deno task build
 ```
 
-We also use `pnpm` to use `changeset`.
+Open http://127.0.0.1:8080 to play.
+
+## Deployment
+
+Pushes to `main` auto-deploy to Bunny via the [on-merge workflow](./.github/workflows/on-merge.yml).
 
 ## Changeset
 
-This template uses [changeset](https://github.com/changesets/changesets) for 
-version management. Changeset helps track and document changes in your project, 
-making it easier to manage releases and generate changelogs.
+This project uses [changeset](https://github.com/changesets/changesets) for version management:
 
-When you make changes to the project, you should create a changeset to describe
-those changes:
-
-1. Run the following command:
-   ```
-   pnpm changeset
-   ```
-2. Follow the prompts to select the type of change (major, minor, or patch) and provide a brief description.
-3. Commit the generated changeset file along with your code changes.
-
-This process ensures that all modifications are properly documented and 
-versioned, facilitating smoother releases and better communication about 
-project updates.
-
-When you merge a pull request that includes a changeset, it will automatically 
-create an associated pull request to release your changes. 
-
-This new pull request will trigger the release process of the script to your
-PullZone in Bunny.
-
-
-> This behavior is disabled by default, every pushes on main are now pushed to
-> Bunny directly.
-> You can enable this pattern again by updating this
-> [action](./.github/workflows/on-merge.yml)
+```sh
+pnpm changeset        # describe your changes
+pnpm changeset version # bump version
+```
