@@ -24,22 +24,35 @@ const WORDS = [
   "FORTH","FORUM","FOUND","FRAME","FRANK","FRAUD","FRESH","FRONT","FROST","FRUIT",
 ];
 
-// --- Game State ---
-interface GameSession {
-  word: string;
-  guesses: string[];
-  status: "playing" | "won" | "lost";
+// --- Token encoding (obfuscate word in client-held token) ---
+const SECRET_KEY = "BunnyWordle2024!";
+
+function encodeToken(word: string): string {
+  const bytes = new TextEncoder().encode(word);
+  const key = new TextEncoder().encode(SECRET_KEY);
+  const xored = new Uint8Array(bytes.length);
+  for (let i = 0; i < bytes.length; i++) {
+    xored[i] = bytes[i] ^ key[i % key.length];
+  }
+  return btoa(String.fromCharCode(...xored));
 }
 
-const games = new Map<string, GameSession>();
-
-function generateId(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let id = "";
-  for (let i = 0; i < 16; i++) {
-    id += chars[Math.floor(Math.random() * chars.length)];
+function decodeToken(token: string): string | null {
+  try {
+    const raw = atob(token);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    const key = new TextEncoder().encode(SECRET_KEY);
+    const xored = new Uint8Array(bytes.length);
+    for (let i = 0; i < bytes.length; i++) {
+      xored[i] = bytes[i] ^ key[i % key.length];
+    }
+    const word = new TextDecoder().decode(xored);
+    if (!/^[A-Z]{5}$/.test(word)) return null;
+    return word;
+  } catch {
+    return null;
   }
-  return id;
 }
 
 function pickWord(): string {
@@ -98,60 +111,34 @@ async function handleRequest(req: Request): Promise<Response> {
   }
 
   if (req.method === "POST" && url.pathname === "/api/new") {
-    const id = generateId();
-    games.set(id, { word: pickWord(), guesses: [], status: "playing" });
-    return jsonResponse({ gameId: id });
+    const word = pickWord();
+    return jsonResponse({ token: encodeToken(word) });
   }
 
   if (req.method === "POST" && url.pathname === "/api/guess") {
     try {
       const body = await req.json();
-      const { gameId, guess } = body;
-      const session = games.get(gameId);
+      const { token, guess, guessNumber } = body;
 
-      if (!session) return jsonResponse({ error: "Game not found" }, 404);
-      if (session.status !== "playing") {
-        return jsonResponse({ error: "Game is over", status: session.status, answer: session.word });
-      }
+      const word = decodeToken(token);
+      if (!word) return jsonResponse({ error: "Invalid game token" }, 400);
 
       const upper = (guess as string).toUpperCase();
       if (!isValidGuess(upper)) {
         return jsonResponse({ error: "Invalid guess. Must be 5 letters." }, 400);
       }
-
-      const result = evaluateGuess(upper, session.word);
-      session.guesses.push(upper);
-
-      if (upper === session.word) {
-        session.status = "won";
-      } else if (session.guesses.length >= 6) {
-        session.status = "lost";
+      if (typeof guessNumber !== "number" || guessNumber < 1 || guessNumber > 6) {
+        return jsonResponse({ error: "Invalid guess number" }, 400);
       }
 
-      const resp: Record<string, unknown> = { result, status: session.status, guessNumber: session.guesses.length };
-      if (session.status !== "playing") {
-        resp.answer = session.word;
-      }
+      const result = evaluateGuess(upper, word);
+      const won = upper === word;
+      const lost = !won && guessNumber >= 6;
+      const status = won ? "won" : lost ? "lost" : "playing";
 
-      return jsonResponse(resp);
-    } catch {
-      return jsonResponse({ error: "Invalid request body" }, 400);
-    }
-  }
+      const resp: Record<string, unknown> = { result, status, guessNumber };
+      if (status !== "playing") resp.answer = word;
 
-  if (req.method === "POST" && url.pathname === "/api/state") {
-    try {
-      const body = await req.json();
-      const session = games.get(body.gameId);
-      if (!session) return jsonResponse({ error: "Game not found" }, 404);
-
-      const history = session.guesses.map((g) => ({
-        guess: g,
-        result: evaluateGuess(g, session.word),
-      }));
-
-      const resp: Record<string, unknown> = { status: session.status, history };
-      if (session.status !== "playing") resp.answer = session.word;
       return jsonResponse(resp);
     } catch {
       return jsonResponse({ error: "Invalid request body" }, 400);
@@ -306,7 +293,8 @@ const HTML_PAGE = `<!DOCTYPE html>
 <script>
 const MAX_GUESSES = 6;
 const WORD_LENGTH = 5;
-let gameId = null;
+let token = null;
+let history = [];
 let currentRow = 0;
 let currentCol = 0;
 let currentGuess = "";
@@ -417,7 +405,7 @@ async function submitGuess() {
     const res = await fetch("/api/guess", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gameId, guess: currentGuess })
+      body: JSON.stringify({ token, guess: currentGuess, guessNumber: currentRow + 1 })
     });
     const data = await res.json();
 
@@ -445,9 +433,14 @@ async function submitGuess() {
 
     await delay(STAGGER * (WORD_LENGTH - 1) + COLOR_DELAY + 200);
 
+    history.push({ guess: currentGuess, result });
+    currentRow++;
+    currentCol = 0;
+    currentGuess = "";
+
     if (data.status === "won") {
       const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
-      showMessage(msgs[currentRow] || "Nice!", 0);
+      showMessage(msgs[currentRow - 1] || "Nice!", 0);
       gameOver = true;
       newGameBtn.style.display = "block";
     } else if (data.status === "lost") {
@@ -456,9 +449,7 @@ async function submitGuess() {
       newGameBtn.style.display = "block";
     }
 
-    currentRow++;
-    currentCol = 0;
-    currentGuess = "";
+    saveState(data.status, data.answer);
   } catch (err) {
     showMessage("Network error");
   }
@@ -485,32 +476,34 @@ function updateKeyStatus(letter, status) {
   }
 }
 
-async function restoreGame(id) {
-  try {
-    const res = await fetch("/api/state", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ gameId: id })
-    });
-    const data = await res.json();
-    if (data.error) return false;
+function saveState(status, answer) {
+  localStorage.setItem("wordle_state", JSON.stringify({ token, history, status, answer }));
+}
 
-    gameId = id;
-    data.history.forEach((entry, r) => {
+function restoreGame() {
+  try {
+    const raw = localStorage.getItem("wordle_state");
+    if (!raw) return false;
+    const state = JSON.parse(raw);
+    if (!state.token || !state.history) return false;
+
+    token = state.token;
+    history = state.history;
+    history.forEach((entry, r) => {
       for (let c = 0; c < WORD_LENGTH; c++) {
         applyTileInstant(r, c, entry.result[c].letter, entry.result[c].status);
         updateKeyStatus(entry.result[c].letter, entry.result[c].status);
       }
     });
-    currentRow = data.history.length;
+    currentRow = history.length;
 
-    if (data.status === "won") {
+    if (state.status === "won") {
       const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
       showMessage(msgs[currentRow - 1] || "Nice!", 0);
       gameOver = true;
       newGameBtn.style.display = "block";
-    } else if (data.status === "lost") {
-      showMessage(data.answer, 0);
+    } else if (state.status === "lost") {
+      showMessage(state.answer, 0);
       gameOver = true;
       newGameBtn.style.display = "block";
     }
@@ -548,19 +541,16 @@ newGameBtn.addEventListener("click", async () => {
 });
 
 async function startGame() {
-  const saved = localStorage.getItem("wordle_gameId");
-  if (saved) {
-    const restored = await restoreGame(saved);
-    if (restored) return;
-  }
+  if (restoreGame()) return;
   await newGame();
 }
 
 async function newGame() {
   const res = await fetch("/api/new", { method: "POST" });
   const data = await res.json();
-  gameId = data.gameId;
-  localStorage.setItem("wordle_gameId", gameId);
+  token = data.token;
+  history = [];
+  saveState("playing");
 }
 
 startGame();
