@@ -139,6 +139,25 @@ async function handleRequest(req: Request): Promise<Response> {
     }
   }
 
+  if (req.method === "POST" && url.pathname === "/api/state") {
+    try {
+      const body = await req.json();
+      const session = games.get(body.gameId);
+      if (!session) return jsonResponse({ error: "Game not found" }, 404);
+
+      const history = session.guesses.map((g) => ({
+        guess: g,
+        result: evaluateGuess(g, session.word),
+      }));
+
+      const resp: Record<string, unknown> = { status: session.status, history };
+      if (session.status !== "playing") resp.answer = session.word;
+      return jsonResponse(resp);
+    } catch {
+      return jsonResponse({ error: "Invalid request body" }, 400);
+    }
+  }
+
   return new Response("Not Found", { status: 404 });
 }
 
@@ -201,7 +220,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   }
   .tile.filled { border-color: #565758; animation: pop 0.1s; }
   .tile.reveal {
-    animation: flip 0.5s ease forwards;
+    animation: flip 0.35s ease forwards;
   }
   .tile.correct { background: #538d4e; border-color: #538d4e; }
   .tile.present { background: #b59f3b; border-color: #b59f3b; }
@@ -214,7 +233,7 @@ const HTML_PAGE = `<!DOCTYPE html>
   }
   @keyframes flip {
     0%   { transform: rotateX(0); }
-    50%  { transform: rotateX(90deg); }
+    45%  { transform: rotateX(90deg); }
     100% { transform: rotateX(0); }
   }
   @keyframes shake {
@@ -392,30 +411,22 @@ async function submitGuess() {
       return;
     }
 
-    // Reveal tiles with animation
+    // Reveal tiles with staggered animation
     const result = data.result;
+    const STAGGER = 150;
+    const COLOR_DELAY = 160;
     for (let i = 0; i < WORD_LENGTH; i++) {
       const tile = getTile(currentRow, i);
-      await delay(300 * i);
-      tile.classList.add("reveal");
-      // Apply color at the midpoint of flip
-      await delay(250);
-      tile.classList.add(result[i].status);
-
-      // Update keyboard
-      const letter = result[i].letter;
-      const prev = keyStatus[letter];
-      const priority = { correct: 3, present: 2, absent: 1 };
-      if (!prev || priority[result[i].status] > priority[prev]) {
-        keyStatus[letter] = result[i].status;
-        const keyBtn = keyboardEl.querySelector(\`[data-key="\${letter}"]\`);
-        if (keyBtn) {
-          keyBtn.className = "key " + result[i].status;
-        }
-      }
+      setTimeout(() => {
+        tile.classList.add("reveal");
+        setTimeout(() => {
+          tile.classList.add(result[i].status);
+          updateKeyStatus(result[i].letter, result[i].status);
+        }, COLOR_DELAY);
+      }, STAGGER * i);
     }
 
-    await delay(300);
+    await delay(STAGGER * (WORD_LENGTH - 1) + COLOR_DELAY + 200);
 
     if (data.status === "won") {
       const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
@@ -439,12 +450,71 @@ function delay(ms) {
   return new Promise(r => setTimeout(r, ms));
 }
 
-// Start game
+function applyTileInstant(row, col, letter, status) {
+  const tile = getTile(row, col);
+  tile.textContent = letter;
+  tile.classList.add("filled", status);
+}
+
+function updateKeyStatus(letter, status) {
+  const priority = { correct: 3, present: 2, absent: 1 };
+  const prev = keyStatus[letter];
+  if (!prev || priority[status] > priority[prev]) {
+    keyStatus[letter] = status;
+    const keyBtn = keyboardEl.querySelector(\`[data-key="\${letter}"]\`);
+    if (keyBtn) keyBtn.className = "key " + status;
+  }
+}
+
+async function restoreGame(id) {
+  try {
+    const res = await fetch("/api/state", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gameId: id })
+    });
+    const data = await res.json();
+    if (data.error) return false;
+
+    gameId = id;
+    data.history.forEach((entry, r) => {
+      for (let c = 0; c < WORD_LENGTH; c++) {
+        applyTileInstant(r, c, entry.result[c].letter, entry.result[c].status);
+        updateKeyStatus(entry.result[c].letter, entry.result[c].status);
+      }
+    });
+    currentRow = data.history.length;
+
+    if (data.status === "won") {
+      const msgs = ["Genius!", "Magnificent!", "Impressive!", "Splendid!", "Great!", "Phew!"];
+      showMessage(msgs[currentRow - 1] || "Nice!", 0);
+      gameOver = true;
+    } else if (data.status === "lost") {
+      showMessage(data.answer, 0);
+      gameOver = true;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function startGame() {
+  const saved = localStorage.getItem("wordle_gameId");
+  if (saved) {
+    const restored = await restoreGame(saved);
+    if (restored) return;
+  }
+  await newGame();
+}
+
+async function newGame() {
   const res = await fetch("/api/new", { method: "POST" });
   const data = await res.json();
   gameId = data.gameId;
+  localStorage.setItem("wordle_gameId", gameId);
 }
+
 startGame();
 </script>
 </body>
